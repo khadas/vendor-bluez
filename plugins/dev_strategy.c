@@ -538,6 +538,17 @@ static void property_changed(GDBusProxy *proxy, const char *name,
 		}
 	}
 
+	if (!strcmp(interface, "org.bluez.Adapter1")) {
+		if (!strcmp(name, "Powered")) {
+			dbus_message_iter_get_basic(iter, &valbool);
+			if (TRUE == valbool && reserved_device_proxy) {
+				info("Going to reconnect last connected device!");
+				//create a timer call connect_dev later
+				g_timeout_add_seconds(SRT[1], connect_dev, (void *)reserved_device_proxy);
+			}
+		}
+	}
+
 #if (DEV_STRATEGY == 3)
 	if (!strcmp(interface, "org.bluez.MediaControl1")) {
 		if (!strcmp(name, "Connected")) {
