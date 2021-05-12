@@ -269,6 +269,13 @@ static int qca(int fd, struct uart_t *u, struct termios *ti)
 	return qca_soc_init(fd, u->bdaddr);
 }
 
+static int aml(int fd, struct uart_t *u, struct termios *ti)
+{
+	fprintf(stdout,"aml\n");
+	return aml_init(fd, u->bdaddr);
+}
+
+
 static int qualcomm(int fd, struct uart_t *u, struct termios *ti)
 {
 	return qualcomm_init(fd, u->speed, ti, u->bdaddr);
@@ -1118,6 +1125,11 @@ struct uart_t uart[] = {
 	/* AMP controller UART */
 	{ "amp",	0x0000, 0x0000, HCI_UART_H4, 115200, 115200,
 			AMP_DEV, DISABLE_PM, NULL, NULL, NULL },
+
+	/* AML ROME */
+	{ "aml",	0x0000, 0x0000, HCI_UART_H4, 115200, 4000000,
+			FLOW_CTL, DISABLE_PM, NULL, aml, NULL },
+
 
 	{ NULL, 0 }
 };

@@ -955,8 +955,8 @@ static void *check_wifi_status(void *user_data)
 				if (!strncmp(&status, &wifi_success, 1)) {
 					wifi_status = 1;
 					PRLOG("wifi setup success, and then exit ble mode\n");
-					sleep(5);
-					system("sh /usr/bin/bluez_tool.sh reset &");
+					//sleep(5);
+					//system("sh /usr/bin/bluez_tool.sh reset &");
 					exit(0);
 				} else {
 					wifi_status = 2;

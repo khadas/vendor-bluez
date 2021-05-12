@@ -45,6 +45,8 @@
 #define HCI_UART_AG6XX	9
 #define HCI_UART_NOKIA	10
 #define HCI_UART_MRVL	11
+#define HCI_UART_AML	12
+
 
 #define HCI_UART_RAW_DEVICE	0
 #define HCI_UART_RESET_ON_INIT	1
@@ -66,6 +68,7 @@ int ath3k_init(int fd, int speed, int init_speed, char *bdaddr,
 						struct termios *ti);
 int ath3k_post(int fd, int pm);
 int qca_soc_init(int fd, char *bdaddr);
+int aml_init(int fd, char *bdaddr);
 int qualcomm_init(int fd, int speed, struct termios *ti, const char *bdaddr);
 int intel_init(int fd, int init_speed, int *speed, struct termios *ti);
 int bcm43xx_init(int fd, int def_speed, int speed, struct termios *ti,

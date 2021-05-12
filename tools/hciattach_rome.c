@@ -58,6 +58,7 @@
 **  Variables
 ******************************************************************************/
 FILE *file;
+unsigned char vnd_local_bd_addr[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 unsigned char *phdr_buffer;
 unsigned char *pdata_buffer = NULL;
 							  patch_info rampatch_patch_info;

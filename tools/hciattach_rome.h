@@ -43,7 +43,6 @@
 #define MSM_ENABLE_FLOW_CTRL   16
 #define MSM_DISABLE_FLOW_CTRL  17
 
-unsigned char vnd_local_bd_addr[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 typedef enum {
 	USERIAL_OP_FLOW_ON,
 	USERIAL_OP_FLOW_OFF,
