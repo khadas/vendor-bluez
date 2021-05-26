@@ -179,7 +179,7 @@ int config_wifi(const uint8_t *arg, int len)
 				system("touch /var/www/cgi-bin/wifi/select.txt");
 				system("chmod 644 /var/www/cgi-bin/wifi/select.txt");
 				fd = fopen(ssid_psk_file, "wb");
-				ret = fwrite(ssid, strlen(ssid), 1, fd);
+				ret = fwrite(ssid, 1, strlen(ssid), fd);
 				if (ret != strlen(ssid)) {
 					PRLOG("write wifi ssid error\n");
 				}
@@ -187,7 +187,7 @@ int config_wifi(const uint8_t *arg, int len)
 				if (ret != 1) {
 					PRLOG("write enter and feedline error\n");
 				}
-				ret = fwrite(psk, strlen(psk), 1, fd);
+				ret = fwrite(psk, 1, strlen(psk), fd);
 				if (ret != strlen(psk)) {
 					PRLOG("write wifi password error\n");
 				}
