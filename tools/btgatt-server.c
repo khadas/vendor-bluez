@@ -195,6 +195,21 @@ int config_wifi(const uint8_t *arg, int len)
 				check_0 = 0;
 				memset(frame_buf, 0, FRAME_BUF_MAX);
 				fclose(fd);
+				//save to /etc/wpa_supplicant.conf
+				fd = fopen("/etc/wpa_supplicant.conf", "ab+");
+				if (fd > 0) {
+					char *fmt = "\nnetwork={\n"
+						"\tssid=\"%s\"\n"
+						"\tpsk=\"%s\"\n"
+						"}\n";
+					char buf[1024] = {0};
+					snprintf(buf, 1023, fmt, ssid, psk);
+					fwrite(buf, 1, strlen(buf), fd);
+					fclose(fd);
+				} else {
+					PRLOG("save to /etc/wpa_supplicant.conf fail\n");
+				}
+
 				wifi_configured = 1;
 
 			}
