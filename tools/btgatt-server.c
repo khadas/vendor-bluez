@@ -960,7 +960,7 @@ static void *check_wifi_status(void *user_data)
 
 		if (wifi_configured) {
 			PRLOG("wifi configured\n");
-			system("sh /etc/bluetooth/wifi_tool.sh");
+			system("sh /var/www/cgi-bin/wifi/wifi_tool.sh");
 			fd = fopen(wifi_status_file, "r+");
 			if (fd <= 0) {
 				PRLOG("read wifi status file error\n");
