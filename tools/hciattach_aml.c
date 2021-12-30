@@ -1,6 +1,6 @@
 /*
  *
- *  Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+ *  Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *  Not a Contribution.
  *
  *  Copyright 2012 The Android Open Source Project
@@ -47,7 +47,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <bluetooth/bluetooth.h>
-#include "hciattach_rome.h"
+#include "hciattach_aml.h"
 #include "hciattach.h"
 #include "bt_fucode.h"
 #ifdef __cplusplus
@@ -65,7 +65,7 @@
 #define MAC_LEN 6
 #define MAC_DELAY 350
 uint8_t vendor_local_addr[MAC_LEN];
-#define SAVE_MAC "/etc/bluetooth/bt_mac"
+#define SAVE_MAC "/etc/bluetooth/aml/bt_mac"
 /*fwICCM is 0 to download*/
 #define fwICCM 0
 /*fwDCCM is 1 to download*/
@@ -91,6 +91,8 @@ uint8_t vendor_local_addr[MAC_LEN];
 
 /*AML FW DEFINE FILE PATH*/
 #define BTFW_W1 "/lib/firmware/aml/bt_fucode.h"
+/*Current module*/
+#define AML_MODULE W1_UART
 
 /******************************************************************************
 **  Variables
@@ -113,6 +115,11 @@ int aml_hci_reset(int fd);
 **  Extern variables
 ******************************************************************************/
 //extern unsigned char vnd_local_bd_addr[6];
+static const vnd_fw_t aml_dongle[] ={
+	{W1_UART,     AML_W1_BT_FW_UART_FILE},
+	{W1U_UART,  AML_W1U_BT_FW_UART_FILE},
+	{W1U_USB,    AML_W1U_BT_FW_USB_FILE},
+};
 
 /*****************************************************************************
 **   Functions
@@ -205,6 +212,7 @@ uint8_t * aml_getprop_read(void)
 	if (n < sizeof(buf)-1)
 	{
 		pr_info("n < sizeof(buf)");
+		close(fd);
 		goto error;
 	}
 
@@ -248,6 +256,25 @@ error:
 	return err;
 
 }
+
+void get_fw_version(char *str)
+{
+	int fd;
+	char * fw_version = NULL;
+	str = str + 7; //skip 7byte
+	asprintf(&fw_version, "fw_version: data = %02x.%02x, number = 0x%02x%02x\n", *(str+1),*str,*(str+3),*(str+2));
+	fd = open(FW_VER_FILE,  O_WRONLY|O_CREAT|O_TRUNC, 0666);
+	if (fd < 0)
+	{
+		pr_err("open fw_file fail");
+		goto error;
+	}
+	write(fd, fw_version, strlen(fw_version));
+	close(fd);
+error:
+	return 0;
+}
+
 
 /******************************************************************************
 **  set bdaddr
@@ -323,6 +350,7 @@ set_mac:
 		pr_err("Failed to set_bdaddr, command failure");
 		return -1;
 	}
+	get_fw_version(rsp);
 
 	pr_info("success");
 
@@ -357,7 +385,7 @@ static int hw_config_set_rf_params(int fd)
 	uint32_t reg_data = 0;
 	uint8_t a2dp_sink_enable = 0;
 
-	antenna_cfg = open("/etc/bluetooth/w1/aml_bt_rf.txt", O_RDONLY);
+	antenna_cfg = open(AML_BT_CONFIG_RF_FILE, O_RDONLY);
 	if (antenna_cfg < 0)
 	{
 		pr_info("In %s, Open failed:%s", __FUNCTION__, strerror(errno));
@@ -379,7 +407,7 @@ static int hw_config_set_rf_params(int fd)
 	pr_info("Setting parameters to controller: antenna number=%d.", antenna_num);
 
 	//////////////////////////////////////////////////////////////////
-	fd_a2dp_cfg = open("/etc/bluetooth/w1/a2dp_mode_cfg.txt", O_RDONLY);
+	fd_a2dp_cfg = open(AML_A2DP_CFG_FILE, O_RDONLY);
 	if (fd_a2dp_cfg < 0)
 	{
 		pr_info("In %s, Open failed:%s", __FUNCTION__, strerror(errno));
@@ -933,27 +961,200 @@ void aml_userial_vendor_set_baud(unsigned char userial_baud)
 	tcsetattr(vnd_userial.fd, TCSADRAIN, &vnd_userial.termios); /* don't change speed until last write done */
 
 }
+static const char* aml_module_type(int module_type) {
+  switch (module_type) {
+    case W1_UART:
+      return "W1_UART";
+    case W1U_UART:
+      return "W1U_UART";
+    case W1U_USB:
+      return "W1U_USB";
+    case W2_UART:
+      return "W2_UART";
+    case W3_UART:
+      return "W3_UART";
+    default:
+      return "unknown module";
+  }
+}
+
+static int select_module(int module, char ** file)
+{
+	int size = 0;
+	int i;
+	pr_info("get %s fw",aml_module_type(module));
+	size = sizeof(aml_dongle)/sizeof(vnd_fw_t);
+	for (i = 0; i < size; i++)
+	{
+		if (aml_dongle[i].module_type == module) {
+			*file = aml_dongle[i].fw_file;
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static unsigned int hw_config_get_iccm_size(char * file)
+{
+	int fd = 0;
+	unsigned int iccm_size = 0;
+	unsigned int size = 0;
+	if ((fd = open(file, O_RDONLY)) < 0)
+		return 0;
+	size = read(fd, &iccm_size, 4);
+	if (size < 0)
+	{
+	    pr_err("--------- read error!---------");
+	    close(fd);
+	    return 0;
+	}
+	close(fd);
+
+	pr_info("--------- iccm_size %d---------\n", iccm_size);
+	return iccm_size;
+}
+
+static unsigned int hw_config_get_dccm_size(char * file)
+{
+	int fd = 0;
+	unsigned int dccm_size = 0;
+	unsigned int size = 0;
+	if ((fd = open(file, O_RDONLY)) < 0)
+		return 0;
+
+	if (lseek(fd, 4, SEEK_SET) != 4)
+	{
+		pr_err("skip 4 bytes iccm len fail");
+		close(fd);
+		return 0;
+	}
+
+	size = read(fd, &dccm_size, 4);
+	if (size < 0)
+	{
+	    pr_err("--------- read error!---------");
+	    close(fd);
+	    return 0;
+	}
+	close(fd);
+
+	pr_info("--------- dccm_size %d---------\n", dccm_size);
+	return dccm_size;
+}
+
+static int get_iccmbuf_dccmbuf(char **iccmbuf, char** dccmbuf, unsigned int iccmlen, unsigned int dccmlen, char * file)
+{
+
+	int fd;
+	int ret =0;
+	char *p_iccmbuf =(char*)malloc(iccmlen + 1);
+
+	if (p_iccmbuf == NULL)
+	{
+		pr_err("malloc p_iccmbuf fail");
+		ret = 1;
+		goto error;
+	}
+	memset(p_iccmbuf, 0, iccmlen + 1);
+
+	char * p_dccmbuf = (char*)malloc(dccmlen + 1);
+	if (p_dccmbuf ==NULL)
+	{
+		pr_err("malloc p_dccmbuf fail");
+		ret = 2;
+		goto error;
+	}
+	memset(p_dccmbuf, 0, dccmlen + 1);
+
+	fd = open(file, O_RDONLY);
+	if (fd <0)
+	{
+		pr_err("open fw_file fail");
+		ret = 3;
+		goto error;
+	}
+	if (lseek(fd, 8, SEEK_SET) != 8)
+	{
+		pr_err("skip 8byte len fail");
+		close(fd);
+		ret = 3;
+		goto error;
+	}
+	ret = read(fd, p_iccmbuf, iccmlen);
+	if (ret < 0)
+	{
+		pr_err("------ p_iccmbuf read error!------");
+		close(fd);
+		ret = 3;
+		goto error;
+	}
+	ret = read(fd, p_dccmbuf, dccmlen);
+	if (ret < 0)
+	{
+		pr_err("------ p_dccmbuf read error!------");
+		close(fd);
+		ret = 3;
+		goto error;
+	}
+	*iccmbuf = p_iccmbuf;
+	*dccmbuf = p_dccmbuf;
+	return 0;
+
+error:
+	if (ret == 1)
+	{
+		//do nothing
+	}
+	else if (ret == 2)
+	{
+		free(p_iccmbuf);
+	}
+	else if (ret ==3)
+	{
+		free(p_iccmbuf);
+		free(p_dccmbuf);
+	}
+
+	return 1;
+}
 
 int aml_download_fw_file(int fd, callback func)
 {
 	int err = -1;
+	unsigned int fwICCM_len =0;
 	unsigned int fwICCM_size = 0 ;
 	unsigned int fwICCM_offset =0 ;
+	char * p_BT_fwICCM = NULL;
 
 	unsigned int fwDCCM_size = 0;
 	unsigned int fwDCCM_offset = 0;
+	char * p_BT_fwDCCM = NULL;
 
-	pr_info("%s start dowmload",bt_file_path);
+	char *fw_file = NULL;
 
-	fwICCM_size = sizeof(BT_fwICCM);
+	if (select_module(AML_MODULE, &fw_file))
+	{
+		pr_err("can't find %s fw", aml_module_type(AML_MODULE));
+		goto error;
+	}
+	pr_info("%s start dowmload",fw_file);
+
+	fwICCM_len = hw_config_get_iccm_size(fw_file);
+	fwICCM_size = fwICCM_len;
 	fwICCM_size -= 256 * 1024;
 	pr_info("fw BT_fwICCM is total : 0x%x", fwICCM_size);
 	fwICCM_offset = 256 * 1024;
 
-	fwDCCM_size = sizeof(BT_fwDCCM);
+	fwDCCM_size = hw_config_get_dccm_size(fw_file);
 	pr_info("fw BT_fwDCCM is total : 0x%x", fwDCCM_size);
 
-	err = aml_send(fd, BT_fwICCM, fwICCM_size, fwICCM_offset, fwICCM);
+	if (get_iccmbuf_dccmbuf(&p_BT_fwICCM, &p_BT_fwDCCM, fwICCM_len, fwDCCM_size, fw_file))
+	{
+		pr_err("get_iccmbuf_dccmbuf fail");
+		goto error;
+	}
+
+	err = aml_send(fd, p_BT_fwICCM, fwICCM_size, fwICCM_offset, fwICCM);
 	if (err < 0)
 	{
 		pr_err("write BT_fwICCM fail");
@@ -968,7 +1169,7 @@ int aml_download_fw_file(int fd, callback func)
 	}
 #endif
 
-	err = aml_send(fd, BT_fwDCCM, fwDCCM_size, fwDCCM_offset, fwDCCM);
+	err = aml_send(fd, p_BT_fwDCCM, fwDCCM_size, fwDCCM_offset, fwDCCM);
 	if (err < 0)
 	{
 		pr_err("write BT_fwDCCM fail");
@@ -982,6 +1183,8 @@ int aml_download_fw_file(int fd, callback func)
 		pr_err("check_download_dccmfw fail");
 	}
 #endif
+	free(p_BT_fwICCM);
+	free(p_BT_fwDCCM);
 
 	if (func != NULL)
 	{
