@@ -64,7 +64,8 @@
 
 /**********a2dp mode cfg**********/
 #define AML_A2DP_CFG_FILE AML_BT_PATH"/a2dp_mode_cfg.txt"
-
+/**************DEFAULT BT MAC***************************/
+#define NUIFYKEY_MAC "/sys/module/kernel/parameters/btmac"
 /*aml bt module*/
 #define W1_UART     0x01
 #define W1U_UART    0x02
