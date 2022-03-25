@@ -30,6 +30,7 @@
  ******************************************************************************/
 
 #define LOG_TAG "bt_vendor"
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -197,12 +198,12 @@ void ms_delay(uint32_t timeout)
 ** save file
 ******************************************************************************/
 
-uint8_t * aml_getprop_read(void)
+uint8_t * aml_getprop_read(const char* str)
 {
 	int fd;
 	char buf[18];
 	memset(buf, '\0', sizeof(buf));
-	fd = open(SAVE_MAC, O_RDONLY|O_CREAT, 0666);
+	fd = open(str, O_RDONLY|O_CREAT, 0666);
 	if (fd < 0)
 	{
 		perror("open SAVE_MAC read");
@@ -257,12 +258,17 @@ error:
 
 }
 
-void get_fw_version(char *str)
+static int get_fw_version(char *str)
 {
 	int fd;
+	int ret;
 	char * fw_version = NULL;
 	str = str + 7; //skip 7byte
-	asprintf(&fw_version, "fw_version: data = %02x.%02x, number = 0x%02x%02x\n", *(str+1),*str,*(str+3),*(str+2));
+	ret = asprintf(&fw_version, "fw_version: date = %02x.%02x, number = 0x%02x%02x\n", *(str+1),*str,*(str+3),*(str+2));
+	if (ret <= 0)
+	{
+		goto error;
+	}
 	fd = open(FW_VER_FILE,  O_WRONLY|O_CREAT|O_TRUNC, 0666);
 	if (fd < 0)
 	{
@@ -270,6 +276,7 @@ void get_fw_version(char *str)
 		goto error;
 	}
 	write(fd, fw_version, strlen(fw_version));
+	free(fw_version);
 	close(fd);
 error:
 	return 0;
@@ -290,11 +297,17 @@ int aml_set_bdaddr(int fd)
 	uint8_t *tempbuf;
 
 	uint8_t local_addr[MAC_LEN];
-	if ((tempbuf = aml_getprop_read()) != NULL)
+	if ((tempbuf = aml_getprop_read(NUIFYKEY_MAC)) != NULL)
 	{
 		memcpy(local_addr, tempbuf, MAC_LEN);
 		goto set_mac;
 	}
+	else if ((tempbuf = aml_getprop_read(SAVE_MAC)) != NULL)
+	{
+		memcpy(local_addr, tempbuf, MAC_LEN);
+		goto set_mac;
+	}
+
 	memset(buf, '\0', sizeof(buf));
 	srand(time(NULL));
 	memset(local_addr, '\0', MAC_LEN);
