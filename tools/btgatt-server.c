@@ -179,6 +179,10 @@ int config_wifi(const uint8_t *arg, int len)
 				system("touch /var/www/cgi-bin/wifi/select.txt");
 				system("chmod 644 /var/www/cgi-bin/wifi/select.txt");
 				fd = fopen(ssid_psk_file, "wb");
+				if (!fd) {
+					PRLOG("open ssid_psk_file file failed\n");
+					return -1;
+				}
 				ret = fwrite(ssid, 1, strlen(ssid), fd);
 				if (ret != strlen(ssid)) {
 					PRLOG("write wifi ssid error\n");
@@ -197,7 +201,7 @@ int config_wifi(const uint8_t *arg, int len)
 				fclose(fd);
 				//save to /etc/wpa_supplicant.conf
 				fd = fopen("/etc/wpa_supplicant.conf", "ab+");
-				if (fd > 0) {
+				if (fd) {
 					char *fmt = "\nnetwork={\n"
 						"\tssid=\"%s\"\n"
 						"\tpsk=\"%s\"\n"
@@ -778,8 +782,7 @@ static void send_cmd(int cmd, void *params, int params_len)
 	uint8_t status;
 	int dd, ret, hdev;
 
-	if (hdev < 0)
-		hdev = hci_get_route(NULL);
+	hdev = hci_get_route(NULL);
 
 	dd = hci_open_dev(hdev);
 	if (dd < 0) {
@@ -890,7 +893,7 @@ static void set_adv_enable(int enable)
 {
 	struct bt_hci_cmd_le_set_adv_enable param;
 	if (enable != 0 && enable != 1) {
-		PRLOG("%s: invalid arg: \n", __func__, enable);
+		PRLOG("%s: invalid arg: %d\n", __func__, enable);
 		return;
 	}
 	param.enable = enable;
@@ -962,8 +965,9 @@ static void *check_wifi_status(void *user_data)
 			PRLOG("wifi configured\n");
 			system("sh /var/www/cgi-bin/wifi/wifi_tool.sh");
 			fd = fopen(wifi_status_file, "r+");
-			if (fd <= 0) {
+			if (!fd) {
 				PRLOG("read wifi status file error\n");
+				return NULL;
 			}
 			ret = fread(&status, 1, 1, fd);
 			if (ret == 1) {

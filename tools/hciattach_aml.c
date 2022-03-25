@@ -88,7 +88,7 @@ uint8_t vendor_local_addr[MAC_LEN];
 #define TCI_UPDATE_UART_BAUDRATE	0xfef2
 #define TCI_DOWNLOAD_BT_FW			0xfef3
 #define HCI_VSC_WRITE_BD_ADDR       0xFC1A
-
+#define ICCM_DCCM_MAX               (32 * 1024 * 1024)
 
 /*AML FW DEFINE FILE PATH*/
 #define BTFW_W1 "/lib/firmware/aml/bt_fucode.h"
@@ -200,7 +200,7 @@ void ms_delay(uint32_t timeout)
 
 uint8_t * aml_getprop_read(const char* str)
 {
-	int fd;
+	int fd, n;
 	char buf[18];
 	memset(buf, '\0', sizeof(buf));
 	fd = open(str, O_RDONLY|O_CREAT, 0666);
@@ -209,7 +209,7 @@ uint8_t * aml_getprop_read(const char* str)
 		perror("open SAVE_MAC read");
 		goto error;
 	}
-	int n = read(fd, buf, sizeof(buf)-1);
+	n = read(fd, buf, sizeof(buf)-1);
 	if (n < sizeof(buf)-1)
 	{
 		pr_info("n < sizeof(buf)");
@@ -249,7 +249,6 @@ int aml_setprop_write(const char *str, int size)
 	if (err != size)
 	{
 		pr_err("write fail");
-		goto error;
 	}
 	close(fd);
 
@@ -273,6 +272,7 @@ static int get_fw_version(char *str)
 	if (fd < 0)
 	{
 		pr_err("open fw_file fail");
+		free(fw_version);
 		goto error;
 	}
 	write(fd, fw_version, strlen(fw_version));
@@ -392,7 +392,6 @@ static int hw_config_set_rf_params(int fd)
 	char *cmd_hdr = NULL;
 	uint8_t antenna_num = 0;
 	int antenna_cfg = 0, fd_a2dp_cfg = 0;
-	uint8_t size_a2dp_cfg = 0;
 	char buffer[255] = { 0 };
 	char c = '=';
 	uint32_t reg_data = 0;
@@ -409,10 +408,17 @@ static int hw_config_set_rf_params(int fd)
 	if (size < 0)
 	{
 		pr_info("In %s, Read failed:%s", __FUNCTION__, strerror(errno));
+		close(antenna_cfg);
 		return FALSE;
 	}
 
+	buffer[sizeof(buffer) - 1] = 0;
 	char *ptr = strchr(buffer, c);
+	if (!ptr) {
+		pr_info("In %s, wrong antenna number", __FUNCTION__);
+		close(antenna_cfg);
+		return FALSE;
+	}
 	ptr++;
 	antenna_num = atoi(ptr);
 
@@ -427,14 +433,20 @@ static int hw_config_set_rf_params(int fd)
 		return FALSE;
 	}
 
-	size_a2dp_cfg = read(fd_a2dp_cfg, buffer, sizeof(buffer));
-	if (size_a2dp_cfg < 0)
+	size = read(fd_a2dp_cfg, buffer, sizeof(buffer));
+	if (size < 0)
 	{
 		pr_info("In %s, Read failed:%s", __FUNCTION__, strerror(errno));
+		close(fd_a2dp_cfg);
 		return FALSE;
 	}
-
+	buffer[sizeof(buffer) - 1] = 0;
 	char *ptr_a2dp_cfg = strchr(buffer, c);
+	if (!ptr_a2dp_cfg) {
+		pr_info("In %s, wrong a2dp_sink_enable value", __FUNCTION__);
+		close(fd_a2dp_cfg);
+		return FALSE;
+	}
 	ptr_a2dp_cfg++;
 	a2dp_sink_enable = atoi(ptr_a2dp_cfg);
 
@@ -1010,8 +1022,8 @@ static int select_module(int module, char ** file)
 static unsigned int hw_config_get_iccm_size(char * file)
 {
 	int fd = 0;
-	unsigned int iccm_size = 0;
-	unsigned int size = 0;
+	unsigned int  iccm_size = 0;
+	int size = 0;
 	if ((fd = open(file, O_RDONLY)) < 0)
 		return 0;
 	size = read(fd, &iccm_size, 4);
@@ -1024,14 +1036,14 @@ static unsigned int hw_config_get_iccm_size(char * file)
 	close(fd);
 
 	pr_info("--------- iccm_size %d---------\n", iccm_size);
-	return iccm_size;
+	return (iccm_size < ICCM_DCCM_MAX) ? iccm_size : ICCM_DCCM_MAX;
 }
 
 static unsigned int hw_config_get_dccm_size(char * file)
 {
 	int fd = 0;
 	unsigned int dccm_size = 0;
-	unsigned int size = 0;
+	int size = 0;
 	if ((fd = open(file, O_RDONLY)) < 0)
 		return 0;
 
@@ -1052,7 +1064,7 @@ static unsigned int hw_config_get_dccm_size(char * file)
 	close(fd);
 
 	pr_info("--------- dccm_size %d---------\n", dccm_size);
-	return dccm_size;
+	return (dccm_size < ICCM_DCCM_MAX) ? dccm_size : ICCM_DCCM_MAX;
 }
 
 static int get_iccmbuf_dccmbuf(char **iccmbuf, char** dccmbuf, unsigned int iccmlen, unsigned int dccmlen, char * file)
@@ -1060,7 +1072,8 @@ static int get_iccmbuf_dccmbuf(char **iccmbuf, char** dccmbuf, unsigned int iccm
 
 	int fd;
 	int ret =0;
-	char *p_iccmbuf =(char*)malloc(iccmlen + 1);
+	char *p_iccmbuf = malloc(iccmlen + 1);
+	char *p_dccmbuf;
 
 	if (p_iccmbuf == NULL)
 	{
@@ -1070,8 +1083,8 @@ static int get_iccmbuf_dccmbuf(char **iccmbuf, char** dccmbuf, unsigned int iccm
 	}
 	memset(p_iccmbuf, 0, iccmlen + 1);
 
-	char * p_dccmbuf = (char*)malloc(dccmlen + 1);
-	if (p_dccmbuf ==NULL)
+	p_dccmbuf = malloc(dccmlen + 1);
+	if (p_dccmbuf == NULL)
 	{
 		pr_err("malloc p_dccmbuf fail");
 		ret = 2;
@@ -1109,6 +1122,8 @@ static int get_iccmbuf_dccmbuf(char **iccmbuf, char** dccmbuf, unsigned int iccm
 		ret = 3;
 		goto error;
 	}
+
+	close(fd);
 	*iccmbuf = p_iccmbuf;
 	*dccmbuf = p_dccmbuf;
 	return 0;
@@ -1148,7 +1163,7 @@ int aml_download_fw_file(int fd, callback func)
 	if (select_module(AML_MODULE, &fw_file))
 	{
 		pr_err("can't find %s fw", aml_module_type(AML_MODULE));
-		goto error;
+		return err;
 	}
 	pr_info("%s start dowmload",fw_file);
 
@@ -1164,7 +1179,7 @@ int aml_download_fw_file(int fd, callback func)
 	if (get_iccmbuf_dccmbuf(&p_BT_fwICCM, &p_BT_fwDCCM, fwICCM_len, fwDCCM_size, fw_file))
 	{
 		pr_err("get_iccmbuf_dccmbuf fail");
-		goto error;
+		return err;
 	}
 
 	err = aml_send(fd, p_BT_fwICCM, fwICCM_size, fwICCM_offset, fwICCM);
@@ -1196,8 +1211,6 @@ int aml_download_fw_file(int fd, callback func)
 		pr_err("check_download_dccmfw fail");
 	}
 #endif
-	free(p_BT_fwICCM);
-	free(p_BT_fwDCCM);
 
 	if (func != NULL)
 	{
@@ -1205,16 +1218,18 @@ int aml_download_fw_file(int fd, callback func)
 		if (err < 0)
 		{
 			pr_err("cmd fail");
-			goto error;
+			err = -1;
 		}
 	}
 	else
 	{
 		pr_err("func is NULL");
-		return -1;
+		err = -1;
 	}
 
 error:
+	free(p_BT_fwICCM);
+	free(p_BT_fwDCCM);
 	return err;
 
 }
