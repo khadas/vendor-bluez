@@ -128,10 +128,10 @@ int rtk_socket_rev_len = 1;
 char start[1] = {0x01};
 char magic[10] = "amlogicble";
 char cmd[9] = "wifisetup";
-char ssid[32] = {0};
-char psk[32] = {0};
+char ssid[33] = {0};
+char psk[64] = {0};
 char end[1] = {0x04};
-#define FRAME_BUF_MAX (1+10+9+32+32+1)
+#define FRAME_BUF_MAX (1+10+9+32+63+1)
 char version[8] = "20171211";
 char frame_buf[FRAME_BUF_MAX] = {0};
 char ssid_psk_file[] = "/var/www/cgi-bin/wifi/select.txt";
@@ -173,8 +173,8 @@ int config_wifi(const uint8_t *arg, int len)
 		if (check_0 == 1) {
 			if (!strncmp("wifisetup", frame_buf + 11, 9)) {
 				strncpy(ssid, frame_buf + 20, 32);
-				strncpy(psk, frame_buf + 52, 32);
-				PRLOG("WiFi setup,ssid:%s,psk:%s\n", ssid, psk);
+				strncpy(psk, frame_buf + 52, 63);
+				PRLOG("WiFi setup,ssid:%s,psk:%s frame_buf:%s\n", ssid, psk,frame_buf);
 				system("rm -rf /var/www/cgi-bin/wifi/select.txt");
 				system("touch /var/www/cgi-bin/wifi/select.txt");
 				system("chmod 644 /var/www/cgi-bin/wifi/select.txt");
