@@ -293,7 +293,7 @@ static const char* get_reserved_device()
 {
 	FILE *fp;
 	static char obj_path[] = "/org/bluez/hci0/dev_xx_xx_xx_xx_xx_xx";
-
+	size_t ret;
 
 	fp = fopen(RESERVED_DEVICE_FILE, "r");
 	if (fp  == NULL) {
@@ -301,8 +301,10 @@ static const char* get_reserved_device()
 		return obj_path;
 	}
 
-	fread(obj_path, sizeof(obj_path), 1, fp);
-
+	ret = fread(obj_path, sizeof(obj_path), 1, fp);
+	if (ret == 0) {
+		error("read reserved device failed\n");
+	}
 	fclose(fp);
 
 	info("reserved device obj_path readed = %s\n", obj_path);
@@ -329,13 +331,14 @@ static int set_discoverable(int enable)
 		value = FALSE;
 	}
 
-	g_dbus_proxy_set_property_basic(adapter_proxy,
+	if (!g_dbus_proxy_set_property_basic(adapter_proxy,
 									"Discoverable",
 									DBUS_TYPE_BOOLEAN,
 									&value,
 									NULL,
 									NULL,
-									NULL);
+									NULL))
+		error("failed to set discoverable property");
 	return 0;
 }
 
@@ -357,13 +360,14 @@ static int set_pairable(int enable)
 		value = FALSE;
 	}
 
-	g_dbus_proxy_set_property_basic(adapter_proxy,
+	if (!g_dbus_proxy_set_property_basic(adapter_proxy,
 									"Pairable",
 									DBUS_TYPE_BOOLEAN,
 									&value,
 									NULL,
 									NULL,
-									NULL);
+									NULL))
+		error("failed to set pairable property");
 	return 0;
 }
 
