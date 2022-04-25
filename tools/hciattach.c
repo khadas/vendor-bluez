@@ -41,10 +41,11 @@
 #include <sys/time.h>
 #include <sys/param.h>
 #include <sys/ioctl.h>
-
+#include "pthread.h"
 #include "lib/bluetooth.h"
 #include "lib/hci.h"
 #include "lib/hci_lib.h"
+#include <semaphore.h>
 
 #include "src/shared/tty.h"
 
@@ -68,8 +69,100 @@ struct uart_t {
 #define AMP_DEV		0x0002
 #define ENABLE_PM	1
 #define DISABLE_PM	0
+static int serial_fd;
+static struct uart_t *u = NULL;
+static sem_t sem;
 
 static volatile sig_atomic_t __io_canceled = 0;
+
+static int hcipower(int fd, int enable)
+{
+	int dev_id, dd;
+	printf("%s setting hcipower to %d\n", __func__, enable);
+	if (enable == 0)
+		enable = HCIDEVDOWN;
+	else
+		enable = HCIDEVUP;
+
+	dev_id = ioctl(fd, HCIUARTGETDEVICE, 0);
+	if (dev_id < 0) {
+		perror("cannot get device id");
+		return dev_id;
+	}
+
+	dd = hci_open_dev(dev_id);
+	if (dd < 0) {
+		perror("HCI device open failed");
+		return dd;
+	}
+
+	if (ioctl(dd, enable, dev_id) < 0 && errno != EALREADY) {
+		perror("hci down:Power management failed");
+		hci_close_dev(dd);
+		return -1;
+	}
+
+	return 0;
+
+}
+
+static void qca_sig_usr(int sig)
+{
+	struct timespec ts;
+	printf("hciattach QCA-SIG-USR handler\n");
+	if (!clock_gettime(CLOCK_REALTIME, &ts)) {
+		ts.tv_sec += 2;
+		if (sem_timedwait(&sem, &ts)) {
+			perror("no suspend befrore resume event:");
+			return;
+		}
+	} else {
+		perror("clock_gettime");
+		sem_wait(&sem);
+	}
+
+	if (sig == SIGUSR1) {
+		/*suspend signal*/
+		fprintf(stderr, "suspend event\n");
+		hcipower(serial_fd, 0);
+		usleep(100000);
+		/* Restore TTY line discipline */
+		int ld = N_TTY;
+		if (ioctl(serial_fd, TIOCSETD, &ld) < 0) {
+			perror("Can't restore line discipline");
+			goto failed;
+		}
+		qca_woble_configure(serial_fd);
+		printf("qca suspend prepare work done.\n");
+	} else if (sig == SIGUSR2) {
+		/*resume signal*/
+		fprintf(stderr, "resume event\n");
+		qca_woble_stop(serial_fd);
+		usleep(100000);
+		int ld = N_HCI;
+		if (ioctl(serial_fd, TIOCSETD, &ld) < 0) {
+			perror("Can't set line discipline");
+			goto failed;
+		}
+		if (ioctl(serial_fd, HCIUARTSETPROTO, HCI_UART_H4) < 0) {
+			perror("Can't set device");
+		}
+		printf("qca resume prepare work done.\n");
+	}
+failed:
+	sem_post(&sem);
+}
+
+static void sig_usr(int sig)
+{
+	printf("hciattach SIG-USR handler %d\n", sig);
+
+	if (u == NULL)
+		return;
+	printf("u type = %s\n", u->type);
+	if (!strcmp(u->type, "qca"))
+		qca_sig_usr(sig);
+}
 
 static void sig_hup(int sig)
 {
@@ -77,6 +170,7 @@ static void sig_hup(int sig)
 
 static void sig_term(int sig)
 {
+	fprintf(stderr, "sig_term\n");
 	__io_canceled = 1;
 }
 
@@ -265,7 +359,9 @@ static int ath3k_pm(int fd, struct uart_t *u, struct termios *ti)
 
 static int qca(int fd, struct uart_t *u, struct termios *ti)
 {
-	fprintf(stderr,"qca\n");
+	if (sem_init(&sem, 0, 1))
+		perror("qca init sem:");
+
 	return qca_soc_init(fd, u->bdaddr);
 }
 
@@ -312,7 +408,6 @@ static int read_check(int fd, void *buf, int count)
 /*
  * BCSP specific initialization
  */
-static int serial_fd;
 static int bcsp_max_retries = 10;
 
 static void bcsp_tshy_sig_alarm(int sig)
@@ -1256,7 +1351,6 @@ static void usage(void)
 
 int main(int argc, char *argv[])
 {
-	struct uart_t *u = NULL;
 	int detach, printpid, raw, opt, i, n, ld, err;
 	int to = 10;
 	int init_speed = 0;
@@ -1395,6 +1489,7 @@ int main(int argc, char *argv[])
 	bcsp_max_retries = to;
 
 	n = init_uart(dev, u, send_break, raw);
+	serial_fd = n;
 	if (n < 0) {
 		perror("Can't initialize device");
 		exit(1);
@@ -1417,6 +1512,10 @@ int main(int argc, char *argv[])
 	sa.sa_handler = sig_hup;
 	sigaction(SIGHUP, &sa, NULL);
 
+	sa.sa_handler = sig_usr;
+	sigaction(SIGUSR1, &sa, NULL);
+	sigaction(SIGUSR2, &sa, NULL);
+	printf("Device setup complete\n");
 	if (detach) {
 		if ((pid = fork())) {
 			if (printpid)
@@ -1438,6 +1537,8 @@ int main(int argc, char *argv[])
 	sigdelset(&sigs, SIGTERM);
 	sigdelset(&sigs, SIGINT);
 	sigdelset(&sigs, SIGHUP);
+	sigdelset(&sigs, SIGUSR1);
+	sigdelset(&sigs, SIGUSR2);
 
 	while (!__io_canceled) {
 		p.revents = 0;
@@ -1455,5 +1556,9 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
+	if (!strcmp(u->type, "qca"))
+		qca_woble_configure(n);
+
+	printf("hciattatch quit.\n");
 	return 0;
 }

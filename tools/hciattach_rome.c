@@ -1824,3 +1824,71 @@ download:
 error:
 	return err;
 }
+
+int qca_hci_send_cmd(int fd, unsigned char *cmd, int cmdsize, unsigned char *rsp)
+{
+		    int err = 0;
+
+		    err = write(fd, cmd, cmdsize);
+		  if (err != cmdsize) {
+			        perror("Send failed:");
+			        err = -1;
+			        goto error;
+			    }
+
+			    memset(rsp, 0, HCI_MAX_EVENT_SIZE);
+
+			    /* Wait for command complete event */
+			    err = read_hci_event(fd, rsp, HCI_MAX_EVENT_SIZE);
+		 if ( err < 0) {
+			        perror("Failed to set patch info on Controller");
+			        goto error;
+			}
+			    error:
+			        return err;
+		}
+
+int qca_woble_configure(int fd)
+{
+		unsigned char rsp[HCI_MAX_EVENT_SIZE];
+		unsigned char reset_cmd[] = {0x01, 0x03, 0x0C, 0x00};
+		unsigned char read_BD_ADDR[] = {0x01, 0x09, 0x10, 0x00};
+		unsigned char APCF_set_filtering_param[] = {0x01, 0x57, 0xFD, 0x12, 0x01, 0x00, 0x00, 0x20, 0x00, 0x00,
+			0x00, 0x00, 0xA6, 0x00, 0x00, 0x00, 0x00, 0xA6, 0x00, 0x00, 0x02, 0x00};
+		/*unsigned char APCF_config_manf_data[] = {0x01, 0x57, 0xFD, 0x23, 0x06, 0x00, 0x00, 0xff, 0xff, 0x41, 0x6d, 0x6c,
+			0x6f, 0x67, 0x69, 0x63, 0x01, 0x78, 0xc5, 0xe5, 0x9b, 0x61, 0xea, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};*/
+		unsigned char APCF_config_manf_data[] = {0x01, 0x57, 0xFD, 0x25, 0x06, 0x00, 0x00, 0xff, 0xff, 0x41, 0x6d, 0x6c, 0x6f, 0x67,
+												 0x69, 0x63, 0x01, 0x78, 0xc5, 0xe5, 0x9b, 0x61, 0xea, 0x01, 0xff, 0xff, 0xff, 0xff,
+												 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00};
+		unsigned char APCF_enable[] = {0x01, 0x57, 0xFD, 0x02, 0x00, 0x01};
+		unsigned char le_set_evt_mask[] = {0x01, 0x01, 0x20, 0x08, 0x7F, 0x1A, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00};
+		unsigned char le_scan_param_setting[] = {0x01, 0x0b, 0x20, 0x07, 0x00, 0x10, 0x00, 0x10, 0x00, 0x00, 0x00};
+		unsigned char le_scan_enable[] = {0x01, 0x0c, 0x20, 0x02, 0x01, 0x00};
+		unsigned char host_sleep_VSC[] = {0x01, 0x6c, 0xfc, 0x01, 0x01};
+		qca_hci_send_cmd(fd, (unsigned char*)read_BD_ADDR, sizeof(read_BD_ADDR), (unsigned char*)rsp);
+		printf("%s, BT_MAC: 0x%x:%x:%x:%x:%x:%x\n", __FUNCTION__, rsp[12], rsp[11], rsp[10], rsp[9], rsp[8], rsp[7]);
+		memcpy((unsigned char*)APCF_config_manf_data+17, rsp+7, 6);
+		qca_hci_send_cmd(fd, (unsigned char*)reset_cmd, sizeof(reset_cmd), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)APCF_set_filtering_param, sizeof(APCF_set_filtering_param), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)APCF_config_manf_data, sizeof(APCF_config_manf_data), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)APCF_enable, sizeof(APCF_enable), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)le_set_evt_mask, sizeof(le_set_evt_mask), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)le_scan_param_setting, sizeof(le_scan_param_setting), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)le_scan_enable, sizeof(le_scan_enable), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)host_sleep_VSC, sizeof(host_sleep_VSC), (unsigned char*)rsp);
+		return 0;
+}
+
+int qca_woble_stop(int fd)
+{
+		unsigned char rsp[HCI_MAX_EVENT_SIZE];
+		printf("%s\n", __func__);
+		unsigned char no_host_sleep_VSC[] = {0x01, 0x6c, 0xfc, 0x01, 0x00};
+		unsigned char le_scan_disable[] = {0x01, 0x0c, 0x20, 0x02, 0x00, 0x00};
+		unsigned char reset_cmd[] = {0x01, 0x03, 0x0C, 0x00};
+		qca_hci_send_cmd(fd, (unsigned char*)reset_cmd, sizeof(reset_cmd), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)no_host_sleep_VSC, sizeof(no_host_sleep_VSC), (unsigned char*)rsp);
+		qca_hci_send_cmd(fd, (unsigned char*)le_scan_disable, sizeof(le_scan_disable), (unsigned char*)rsp);
+		return 0;
+}
