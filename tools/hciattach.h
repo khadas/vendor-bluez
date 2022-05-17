@@ -68,6 +68,9 @@ int ath3k_init(int fd, int speed, int init_speed, char *bdaddr,
 						struct termios *ti);
 int ath3k_post(int fd, int pm);
 int qca_soc_init(int fd, char *bdaddr);
+int qca_woble_configure(int fd);
+int qca_woble_stop(int fd);
+
 int aml_init(int fd, char *bdaddr);
 int qualcomm_init(int fd, int speed, struct termios *ti, const char *bdaddr);
 int intel_init(int fd, int init_speed, int *speed, struct termios *ti);
