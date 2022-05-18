@@ -109,6 +109,9 @@ unsigned int fwDCCM_offset = 0;
 #endif
 
 static vnd_userial_cb_t vnd_userial;
+static int antenna_number = 2;
+static int load_efuse = 0;
+
 typedef int (*callback)(int);
 int aml_hci_reset(int fd);
 
@@ -120,6 +123,28 @@ static const vnd_fw_t aml_dongle[] ={
 	{W1_UART,     AML_W1_BT_FW_UART_FILE},
 	{W1U_UART,  AML_W1U_BT_FW_UART_FILE},
 	{W1U_USB,    AML_W1U_BT_FW_USB_FILE},
+};
+
+static int antenna_number_act(const char * p_name, char * p_value)
+{
+	antenna_number = strtol(p_value, NULL, 10);
+	if (antenna_number == 0) {
+		pr_info("antenna_number use default value 2");
+		antenna_number = 2;
+	}
+	pr_info("%s = %d", p_name, antenna_number);
+}
+
+static int load_efuse_act(const char * p_name, char* p_value)
+{
+	load_efuse = strtol(p_value, NULL, 10);
+	pr_info("%s = %d", p_name, load_efuse);
+}
+
+static const d_entry_t entry_table[] = {
+	{"antenna_number", antenna_number_act},
+	{"load_efuse", load_efuse_act},
+	{NULL, NULL}
 };
 
 /*****************************************************************************
@@ -172,6 +197,46 @@ unsigned char aml_userial_to_tcio_baud(unsigned char cfg_baud, unsigned int *bau
 	}
 
 	return TRUE;
+}
+
+static int get_config(const char* file)
+{
+	FILE * config_fd;
+	char line[MAX_LINE_LEN +1] = {0};
+	char *p_name = NULL;
+	char *p_value = NULL;
+	d_entry_t * temp_table = NULL;
+	pr_info("%s-%d",__func__,__LINE__);
+	config_fd = fopen(file, "r");
+	if (config_fd == NULL) {
+		pr_err("open file: %s fail", file);
+		return 0;
+	}
+	pr_info("%s-%d",__func__,__LINE__);
+
+	while (fgets(line, MAX_LINE_LEN +1, config_fd) != NULL) {
+		if (line[0] == '#') {
+			continue;
+		}
+
+		p_name = strtok(line, DELIM);
+		if (p_name == NULL) {
+			continue;
+		}
+
+		p_value = strtok(NULL, DELIM);
+
+		temp_table = (d_entry_t*)entry_table;
+		while (temp_table->entry_name != NULL) {
+			if (!strcmp(temp_table->entry_name, p_name)) {
+				temp_table->p_action(temp_table->entry_name, p_value);
+				break;
+			}
+			temp_table ++;
+		}
+	}
+	fclose(config_fd);
+	return 1;
 }
 
 /******************************************************************************
@@ -391,38 +456,14 @@ static int hw_config_set_rf_params(int fd)
 	unsigned char rsp[HCI_MAX_EVENT_SIZE];
 	char *cmd_hdr = NULL;
 	uint8_t antenna_num = 0;
-	int antenna_cfg = 0, fd_a2dp_cfg = 0;
+	int fd_a2dp_cfg = 0;
 	char buffer[255] = { 0 };
 	char c = '=';
 	uint32_t reg_data = 0;
 	uint8_t a2dp_sink_enable = 0;
 
-	antenna_cfg = open(AML_BT_CONFIG_RF_FILE, O_RDONLY);
-	if (antenna_cfg < 0)
-	{
-		pr_info("In %s, Open failed:%s", __FUNCTION__, strerror(errno));
-		return FALSE;
-	}
+	antenna_num = antenna_number;
 
-	size = read(antenna_cfg, buffer, sizeof(buffer));
-	if (size < 0)
-	{
-		pr_info("In %s, Read failed:%s", __FUNCTION__, strerror(errno));
-		close(antenna_cfg);
-		return FALSE;
-	}
-
-	buffer[sizeof(buffer) - 1] = 0;
-	char *ptr = strchr(buffer, c);
-	if (!ptr) {
-		pr_info("In %s, wrong antenna number", __FUNCTION__);
-		close(antenna_cfg);
-		return FALSE;
-	}
-	ptr++;
-	antenna_num = atoi(ptr);
-
-	close(antenna_cfg);
 	pr_info("Setting parameters to controller: antenna number=%d.", antenna_num);
 
 	//////////////////////////////////////////////////////////////////
@@ -542,11 +583,10 @@ int aml_start_cpu_uart(int fd, callback func)
 		return -1;
 	}
 	pr_info("success");
-
-	if (func != NULL)
+	ms_delay(MAC_DELAY);
+	pr_info("delay %d",MAC_DELAY);
+	if (!load_efuse && func != NULL)
 	{
-		pr_info("delay %d",MAC_DELAY);
-		ms_delay(MAC_DELAY);
 		err = func(fd);
 		if (err < 0)
 		{
@@ -1535,6 +1575,10 @@ int aml_init(int fd, char *bdaddr)
 
 	vnd_userial.fd = fd;
 	bt_file_path = BTFW_W1;
+
+	if (!get_config(AML_BT_CONFIG_RF_FILE)) {
+		pr_err("get_config fail,use defult value");
+	}
 
 	/* update baud */
 	err = aml_update_baudrate(fd, aml_tci_write_reg, aml_tci_read_reg);

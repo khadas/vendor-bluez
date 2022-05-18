@@ -49,6 +49,8 @@
 #define USERIAL_BAUD_3M         14
 #define USERIAL_BAUD_4M         15
 #define USERIAL_BAUD_AUTO       16
+#define DELIM " =\n\t\r"
+#define MAX_LINE_LEN 255
 
 /*aml fw path*/
 #define AML_BT_PATH "/etc/bluetooth/aml"
@@ -105,6 +107,13 @@ typedef struct {
 	unsigned short    opcode;
 	unsigned char     plen;
 } __attribute__ ((packed))  hci_command_hdr;
+
+typedef int (*action_act)(const char * p_name, char * p_value);
+typedef struct {
+    const char *entry_name;
+    action_act p_action;
+} d_entry_t;
+
 
 
 #endif//HW_AML_H
