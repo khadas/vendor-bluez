@@ -151,10 +151,15 @@ int config_wifi(const uint8_t *arg, int len)
 	if (len > 0) {
 		memset(frame_buf, 0, FRAME_BUF_MAX);
 		memcpy(frame_buf, arg, len);
-		PRLOG("frame_buf:%s, len:%d\n", frame_buf, len);
+		PRLOG("frame_buf:%s, len:%d, FRAME_BUF_MAX:%d\n", frame_buf, len, FRAME_BUF_MAX);
 		check_0 = 0;
+		if (len > FRAME_BUF_MAX) {
+			PRLOG("len too long, max buf length exceeded!!!\n");
+			return -1;
+		}
+
 		if ((frame_buf[0] == 0x01)
-				&& (frame_buf[FRAME_BUF_MAX - 1] == 0X04)) {
+				&& (frame_buf[len - 1] == 0X04)) {
 			PRLOG("frame start and end is right\n");
 			if (!strncmp(magic, frame_buf + 1, 10)) {
 				PRLOG("magic : %s\n", magic);
