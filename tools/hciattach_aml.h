@@ -95,6 +95,11 @@ typedef struct {
 	char *fw_file;
 } vnd_fw_t;
 
+typedef struct {
+	int module_type;
+	char *chipid;
+} vnd_chip_t;
+
 /* vendor serial control block */
 typedef struct
 {

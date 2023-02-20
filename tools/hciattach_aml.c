@@ -93,8 +93,15 @@ uint8_t vendor_local_addr[MAC_LEN];
 /*AML FW DEFINE FILE PATH*/
 #define BTFW_W1 "/lib/firmware/aml/bt_fucode.h"
 /*Current module*/
-#define AML_MODULE W1_UART
+static int AML_MODULE = W1_UART;
 
+#define USB_POWER_UP        _IO('m', 1)
+#define USB_POWER_DOWN      _IO('m', 2)
+#define SDIO_POWER_UP       _IO('m', 3)
+#define SDIO_POWER_DOWN     _IO('m', 4)
+#define SDIO_GET_DEV_TYPE   _IO('m', 5)
+
+#define ARRAY_SIZE(a)       (sizeof(a) / sizeof((a)[0]))
 /******************************************************************************
 **  Variables
 ******************************************************************************/
@@ -123,6 +130,12 @@ static const vnd_fw_t aml_dongle[] ={
 	{W1_UART,     AML_W1_BT_FW_UART_FILE},
 	{W1U_UART,  AML_W1U_BT_FW_UART_FILE},
 	{W1U_USB,    AML_W1U_BT_FW_USB_FILE},
+};
+
+static const vnd_chip_t aml_chip[] ={
+	{W1_UART,     "0x8888"},
+	{W1U_UART,    "0x0540"},
+//	{W1U_USB,     "0x0541"},
 };
 
 static int antenna_number_act(const char * p_name, char * p_value)
@@ -1026,6 +1039,70 @@ void aml_userial_vendor_set_baud(unsigned char userial_baud)
 	tcsetattr(vnd_userial.fd, TCSADRAIN, &vnd_userial.termios); /* don't change speed until last write done */
 
 }
+
+static int get_wifi_dev_type(char *dev_type)
+{
+	int fd;
+
+	fd = open("/dev/wifi_power", O_RDWR);
+	if (fd < 0) {
+		return -1;
+	}
+
+	if (ioctl(fd, SDIO_GET_DEV_TYPE, dev_type) < 0) {
+		close(fd);
+
+		return -1;
+	}
+	close(fd);
+
+	return 0;
+}
+
+static int chip_to_module(char* chipid)
+{
+	int i;
+	for (i = 0; i < (int)(ARRAY_SIZE(aml_chip)); i++)
+	{
+		if (!strncmp(chipid, aml_chip[i].chipid, 6))
+		{
+			return aml_chip[i].module_type;
+		}
+	}
+	return 0;
+}
+
+static int select_module(void)
+{
+	char dev_type[10] = {'\0'};
+	char file_name[100] = {'\0'};
+	char sdio_buf[128];
+
+	FILE *fp = NULL;
+
+	get_wifi_dev_type(dev_type);
+	sprintf(file_name, "/sys/bus/mmc/devices/%s:0000/%s:0000:1/device", dev_type, dev_type);
+
+	fp = fopen(file_name, "r");
+
+	if (!fp) {
+		fprintf(stderr, "open sdio wifi file failed\n");
+		return -1;
+	}
+
+	memset(sdio_buf, 0, sizeof(sdio_buf));
+	if (fread(sdio_buf, 1, sizeof(sdio_buf)-1, fp) < 1) {
+		fclose(fp);
+
+		return -1;
+	}
+	sdio_buf[sizeof(sdio_buf)-1] = '\0';
+	fclose(fp);
+	pr_info("chip id is %s",sdio_buf);
+
+	return chip_to_module(sdio_buf);
+}
+
 static const char* aml_module_type(int module_type) {
   switch (module_type) {
     case W1_UART:
@@ -1043,11 +1120,14 @@ static const char* aml_module_type(int module_type) {
   }
 }
 
-static int select_module(int module, char ** file)
+static int select_firmware(char ** file)
 {
 	int size = 0;
 	int i;
+	int module = 0;
+	module = select_module();
 	pr_info("get %s fw",aml_module_type(module));
+	AML_MODULE = module;
 	size = sizeof(aml_dongle)/sizeof(vnd_fw_t);
 	for (i = 0; i < size; i++)
 	{
@@ -1200,7 +1280,7 @@ int aml_download_fw_file(int fd, callback func)
 
 	char *fw_file = NULL;
 
-	if (select_module(AML_MODULE, &fw_file))
+	if (select_firmware(&fw_file))
 	{
 		pr_err("can't find %s fw", aml_module_type(AML_MODULE));
 		return err;
