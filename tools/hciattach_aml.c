@@ -130,12 +130,13 @@ static const vnd_fw_t aml_dongle[] ={
 	{W1_UART,     AML_W1_BT_FW_UART_FILE},
 	{W1U_UART,  AML_W1U_BT_FW_UART_FILE},
 	{W1U_USB,    AML_W1U_BT_FW_USB_FILE},
+	{W2_UART,    AML_W2_BT_FW_UART_FILE},
 };
 
 static const vnd_chip_t aml_chip[] ={
 	{W1_UART,     "0x8888"},
 	{W1U_UART,    "0x0540"},
-//	{W1U_USB,     "0x0541"},
+	{W2_UART,     "0x0640"},
 };
 
 static int antenna_number_act(const char * p_name, char * p_value)

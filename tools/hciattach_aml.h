@@ -61,7 +61,7 @@
 #define AML_W1_BT_FW_UART_FILE  AML_BT_PATH"/w1_bt_fw_uart.bin"
 #define AML_W1U_BT_FW_UART_FILE AML_BT_PATH"/w1u_bt_fw_uart.bin"
 #define AML_W1U_BT_FW_USB_FILE  AML_BT_PATH"/w1u_bt_fw_usb.bin"
-
+#define AML_W2_BT_FW_UART_FILE  AML_BT_PATH"/w2_bt_fw_uart.bin"
 
 
 /**********a2dp mode cfg**********/
