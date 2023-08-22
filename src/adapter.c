@@ -9001,3 +9001,181 @@ bool btd_le_connect_before_pairing(void)
 
 	return false;
 }
+
+
+/* A2DP priority settings */
+
+static int write_flush_timeout(int fd, uint16_t handle,
+		unsigned int timeout_ms) {
+	uint16_t timeout = (timeout_ms * 1000) / 625;  // timeout units of 0.625ms
+	unsigned char hci_write_flush_cmd[] = {
+		0x01,               // HCI command packet
+		0x28, 0x0C,         // HCI_Write_Automatic_Flush_Timeout
+		0x04,               // Length
+		0x00, 0x00,         // Handle
+		0x00, 0x00,         // Timeout
+	};
+
+	hci_write_flush_cmd[4] = (uint8_t)handle;
+	hci_write_flush_cmd[5] = (uint8_t)(handle >> 8);
+	hci_write_flush_cmd[6] = (uint8_t)timeout;
+	hci_write_flush_cmd[7] = (uint8_t)(timeout >> 8);
+
+	int ret = write(fd, hci_write_flush_cmd, sizeof(hci_write_flush_cmd));
+	if (ret < 0) {
+		error("write(): %s (%d)]", strerror(errno), errno);
+		return -1;
+	} else if (ret != sizeof(hci_write_flush_cmd)) {
+		error("write(): unexpected length %d", ret);
+		return -1;
+	}
+	return 0;
+}
+
+static int get_hci_sock() {
+	int sock = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI);
+	struct sockaddr_hci addr;
+	int opt;
+
+	if (sock < 0) {
+		error("Can't create raw HCI socket!");
+		return -1;
+	}
+
+	opt = 1;
+	if (setsockopt(sock, SOL_HCI, HCI_DATA_DIR, &opt, sizeof(opt)) < 0) {
+		error("Error setting data direction\n");
+		return -1;
+	}
+
+	/* Bind socket to the HCI device */
+	memset(&addr, 0, sizeof(addr));
+	addr.hci_family = AF_BLUETOOTH;
+	addr.hci_dev = 0;  // hci0
+	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+		error("Can't attach to device hci0. %s(%d)\n",
+			 strerror(errno),
+			 errno);
+		return -1;
+	}
+	return sock;
+}
+
+
+static int get_acl_handle(int fd, bdaddr_t *bdaddr) {
+	int i;
+	int ret = -1;
+	struct hci_conn_list_req *conn_list;
+	struct hci_conn_info *conn_info;
+	int max_conn = 10;
+
+	conn_list = malloc(max_conn * (
+			sizeof(struct hci_conn_list_req) + sizeof(struct hci_conn_info)));
+	if (!conn_list) {
+		error("Out of memory in %s\n", __FUNCTION__);
+		return -1;
+	}
+
+	conn_list->dev_id = 0;  /* hardcoded to HCI device 0 */
+	conn_list->conn_num = max_conn;
+
+	if (ioctl(fd, HCIGETCONNLIST, (void *)conn_list)) {
+		error("Failed to get connection list\n");
+		goto out;
+	}
+
+	for (i=0; i < conn_list->conn_num; i++) {
+		conn_info = &conn_list->conn_info[i];
+		if (conn_info->type == ACL_LINK &&
+				!memcmp((void *)&conn_info->bdaddr, (void *)bdaddr,
+				sizeof(bdaddr_t))) {
+			ret = conn_info->handle;
+			goto out;
+		}
+	}
+	ret = 0;
+
+out:
+	free(conn_list);
+	return ret;
+}
+
+
+/* Request that the ACL link to a given Bluetooth connection be high priority,
+ * for improved coexistence support
+ */
+#define PRIO_CMD_MAX_LEN 8
+#define VID_BCM "02D0"
+#define VID_AML "8888"
+int vendor_set_priority(bdaddr_t *ba,uint8_t priority,uint8_t direction)
+{
+	int ret, len;
+	int fd = get_hci_sock();
+	int acl_handle;
+	unsigned char priority_cmd[PRIO_CMD_MAX_LEN] = {0};
+	struct btd_adapter *adapter;
+	GList *list = g_list_first(adapter_list);
+
+	DBG("prio:%u, dir:%u", priority, direction);
+
+	if (fd < 0) {
+		error("unable to get hci sock");
+		return fd;
+	}
+	if (!list) {
+		error("no adapter");
+		return -1;
+	}
+	adapter = list->data;
+
+	if (strstr(adapter->modalias, VID_AML)) {
+		DBG("aml device");
+		priority_cmd[0] = 0x01;         // HCI command packet
+		priority_cmd[1] = 0x36;
+		priority_cmd[2] = 0xfc;         // Write_A2DP_Connection
+		priority_cmd[3] = 0x03;         // Length
+		priority_cmd[6] = (uint8_t)priority;
+		(void)direction;
+		len = 7;
+	} else if (strstr(adapter->modalias, VID_BCM)) {
+		DBG("bcm device");
+		priority_cmd[0] = 0x01;         // HCI command packet
+		priority_cmd[1] = 0x1a;
+		priority_cmd[2] = 0xfd;         // Write_A2DP_Connection
+		priority_cmd[3] = 0x04;         // Length
+		if (priority == PRIORITY_A2DP_START)
+			priority_cmd[6] = 0x01;
+		else
+			priority_cmd[6] = 0;
+		priority_cmd[7] = direction;
+		len = 8;
+	} else {
+		DBG("not supported device");
+		return 0;
+	}
+
+
+	acl_handle = get_acl_handle(fd, ba);
+	if (acl_handle < 0) {
+		ret = acl_handle;
+		goto out;
+	}
+
+	priority_cmd[4] = (uint8_t)acl_handle;
+	priority_cmd[5] = (uint8_t)(acl_handle >> 8);
+
+	ret = write(fd, priority_cmd, len);
+	if (ret < 0) {
+		error("write(): %s (%d)]", strerror(errno), errno);
+	} else if (ret != len) {
+		error("write(): unexpected length %d", ret);
+	} else {
+		if (strstr(adapter->modalias, VID_BCM))
+			write_flush_timeout(fd, acl_handle, 200);
+		DBG("prio cmd done");
+	}
+
+out:
+	close(fd);
+	return ret;
+}

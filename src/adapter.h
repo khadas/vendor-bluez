@@ -232,3 +232,18 @@ void btd_adapter_for_each_device(struct btd_adapter *adapter,
 
 bool btd_le_connect_before_pairing(void);
 
+
+/* A2DP priority setting */
+enum{
+    A2DP_SOURCE,
+    A2DP_SINK
+};
+
+enum{
+	PRIORITY_A2DP_START,
+	PRIORITY_A2DP_STOP,
+	PRIORITY_HID,
+	PRIORITY_OBEX,
+};
+
+int vendor_set_priority(bdaddr_t *ba,uint8_t priority,uint8_t direction);

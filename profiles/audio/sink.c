@@ -142,12 +142,14 @@ static void stream_state_changed(struct avdtp_stream *stream,
 {
 	struct btd_service *service = user_data;
 	struct sink *sink = btd_service_get_user_data(service);
+	struct btd_device *dev = btd_service_get_device(service);
 
 	if (err)
 		return;
 
 	switch (new_state) {
 	case AVDTP_STATE_IDLE:
+		DBG("+++++AVDTP_STATE_IDLE");
 		btd_service_disconnecting_complete(sink->service, 0);
 
 		if (sink->disconnect_id > 0) {
@@ -165,9 +167,13 @@ static void stream_state_changed(struct avdtp_stream *stream,
 	case AVDTP_STATE_OPEN:
 		btd_service_connecting_complete(sink->service, 0);
 		sink_set_state(sink, SINK_STATE_CONNECTED);
+		//normal prirotiy, source
+		vendor_set_priority(device_get_address(dev), PRIORITY_A2DP_STOP, A2DP_SOURCE);
 		break;
 	case AVDTP_STATE_STREAMING:
 		sink_set_state(sink, SINK_STATE_PLAYING);
+		//high priority, source
+		vendor_set_priority(device_get_address(dev), PRIORITY_A2DP_START,A2DP_SOURCE);
 		break;
 	case AVDTP_STATE_CONFIGURED:
 	case AVDTP_STATE_CLOSING:
