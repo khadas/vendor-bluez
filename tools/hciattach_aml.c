@@ -131,12 +131,14 @@ static const vnd_fw_t aml_dongle[] ={
 	{W1U_UART,  AML_W1U_BT_FW_UART_FILE},
 	{W1U_USB,    AML_W1U_BT_FW_USB_FILE},
 	{W2_UART,    AML_W2_BT_FW_UART_FILE},
+	{W2L_UART,   AML_W2L_BT_FW_UART_FILE},
 };
 
 static const vnd_chip_t aml_chip[] ={
 	{W1_UART,     "0x8888"},
 	{W1U_UART,    "0x0540"},
 	{W2_UART,     "0x0640"},
+	{W2L_UART,    "0x0800"},
 };
 
 static int antenna_number_act(const char * p_name, char * p_value)
@@ -568,7 +570,7 @@ int aml_start_cpu_uart(int fd, callback func)
 
 	cmd_hdr = (void *) (cmd + 1);
 	cmd[0]	= HCI_COMMAND_PKT;
-	UINT16_TO_STREAM(cmd_hdr, TCI_UPDATE_UART_BAUDRATE);
+	UINT16_TO_STREAM(cmd_hdr, TCI_WRITE_REG);
 	*cmd_hdr++ = 0x08;
 	UINT32_TO_STREAM(cmd_hdr, 0xf03058);
 	UINT32_TO_STREAM(cmd_hdr, 0x700);
@@ -1114,6 +1116,8 @@ static const char* aml_module_type(int module_type) {
       return "W1U_USB";
     case W2_UART:
       return "W2_UART";
+    case W2L_UART:
+      return "W2L_UART";
     case W3_UART:
       return "W3_UART";
     default:
